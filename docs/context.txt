@@ -1,0 +1,41 @@
+PROJETO: BizControl 360 - ERP para microempresas
+OBJETIVO: Transformar dashboard de administrador em interface profissional, intuitiva e mobile-first
+
+RESTRIÇÕES TÉCNICAS:
+- Framework: Next.js 14 + TypeScript + Tailwind CSS
+- Componentes: shadcn/ui (já instalado)
+- Cores: primária #0ea5e9, sucesso #22c55e, perigo #ef4444
+- Ícones: Lucide React
+- Fonte: Inter
+- NÃO pode usar bibliotecas externas além dessas
+- Deve ser responsivo (mobile/tablet/desktop)
+
+PÚBLICO ALVO:
+- Donos de lojas de 30-60 anos
+- Usam celular 70% do tempo
+- Têm medo de tecnologia complexa
+- Precisam ver dados rapidamente
+
+DADOS MOSTRADOS:
+- KPIs: vendas do dia, lucro, estoque crítico, total de pedidos
+- Gráfico: vendas dos últimos 7 dias
+- Lista: top 5 produtos vendidos
+- Alertas: estoque baixo (vermelho)
+- Vendas em tempo real (polling 4s)
+
+OBJETIVOS UX:
+- Reduzir tempo de compreensão dos KPIs (< 2 segundos)
+- Destacar alertas de forma impossível de ignorar
+- Facilitar navegação entre seções
+- Tornar gráficos legíveis em telas pequenas
+
+EXEMPLOS INSPIRAÇÃO:
+- Figma Dashboard de Stripe (clean, dados claros)
+- Notion (simplicidade)
+- Linear.app (interações micro)
+
+ENTREGÁVEL ESPERADO:
+- Código TypeScript completo
+- Usando componentes shadcn/ui
+- Comentários explicando decisões de design
+- Lista de componentes novos necessários

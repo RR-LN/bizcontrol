@@ -1,0 +1,420 @@
+﻿// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER MANAGEMENT & AUTHENTICATION
+// ============================================
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  OPERATOR
+  VIEWER
+}
+
+enum UserActivityType {
+  LOGIN
+  LOGOUT
+  PASSWORD_CHANGE
+  PROFILE_UPDATE
+  FAILED_LOGIN
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  password            String
+  firstName           String?   @map("first_name")
+  lastName            String?   @map("last_name")
+  phone               String?
+  role                UserRole  @default(OPERATOR)
+  isActive            Boolean   @default(true) @map("is_active")
+  isLocked            Boolean   @default(false) @map("is_locked")
+  lockedUntil         DateTime? @map("locked_until")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lastLogin           DateTime? @map("last_login")
+  passwordChangedAt   DateTime? @map("password_changed_at")
+  twoFactorEnabled    Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret     String?   @map("two_factor_secret")
+  backupCodes         String?   @map("backup_codes")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  activities      UserActivity[]
+  permissions     UserPermission[]
+  sessions        UserSession[]
+  createdOrders   Order[]          @relation("OrderCreatedBy")
+  approvedOrders  Order[]          @relation("OrderApprovedBy")
+  stockMovements  StockMovement[]
+  transactions    Transaction[]
+  createdProducts Product[]        @relation("ProductCreatedBy")
+  updatedProducts Product[]        @relation("ProductUpdatedBy")
+  cashClosings    CashClosing[]
+
+  @@map("users")
+}
+
+model UserActivity {
+  id         String           @id @default(uuid())
+  userId     String           @map("user_id")
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType UserActivityType @map("action_type")
+  ipAddress  String?          @map("ip_address")
+  userAgent  String?          @map("user_agent")
+  details    String?
+  timestamp  DateTime         @default(now())
+
+  @@index([userId])
+  @@index([timestamp])
+  @@map("user_activities")
+}
+
+model UserPermission {
+  id         String @id @default(uuid())
+  userId     String @map("user_id")
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module     String
+  permission String
+
+  @@unique([userId, module, permission])
+  @@map("user_permissions")
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionKey   String   @unique @map("session_key")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  lastActivity DateTime @default(now()) @map("last_activity")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+// ============================================
+// INVENTORY MANAGEMENT
+// ============================================
+
+enum ProductType {
+  SIMPLE
+  VARIABLE
+  COMPOSITE
+  SERVICE
+}
+
+model Supplier {
+  id            String   @id @default(uuid())
+  name          String
+  code          String?
+  contactPerson String?  @map("contact_person")
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  country       String?
+  notes         String?
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  products Product[]
+
+  @@map("suppliers")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  zones  WarehouseZone[]
+  stocks Stock[]
+
+  @@map("warehouses")
+}
+
+model WarehouseZone {
+  id          String    @id @default(uuid())
+  warehouseId String    @map("warehouse_id")
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  name        String
+  code        String
+  description String?
+
+  // Relations
+  locations WarehouseLocation[]
+
+  @@unique([warehouseId, code])
+  @@map("warehouse_zones")
+}
+
+model WarehouseLocation {
+  id       String        @id @default(uuid())
+  zoneId   String        @map("zone_id")
+  zone     WarehouseZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  aisle    String
+  rack     String
+  shelf    String
+  bin      String
+  isActive Boolean       @default(true) @map("is_active")
+
+  @@unique([zoneId, aisle, rack, shelf, bin])
+  @@map("warehouse_locations")
+}
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  parentId    String?    @map("parent_id")
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              String      @id @default(uuid())
+  code            String      @unique
+  name            String
+  description     String?
+  type            ProductType @default(SIMPLE)
+  categoryId      String?     @map("category_id")
+  category        Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId      String?     @map("supplier_id")
+  supplier        Supplier?   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  sku             String?     @unique
+  barcode         String?     @unique
+  image           String?
+  costPrice       Decimal     @default(0) @map("cost_price")
+  sellingPrice    Decimal     @map("selling_price")
+  taxRate         Decimal     @default(0) @map("tax_rate")
+  minStockLevel   Int         @default(0) @map("min_stock_level")
+  maxStockLevel   Int?        @map("max_stock_level")
+  reorderPoint    Int         @default(0) @map("reorder_point")
+  reorderQuantity Int         @default(0) @map("reorder_quantity")
+  isActive        Boolean     @default(true) @map("is_active")
+  trackInventory  Boolean     @default(true) @map("track_inventory")
+  FAILED_LOGIN
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  password            String
+  firstName           String?   @map("first_name")
+  lastName            String?   @map("last_name")
+  phone               String?
+  role                UserRole  @default(OPERATOR)
+  isActive            Boolean   @default(true) @map("is_active")
+  isLocked            Boolean   @default(false) @map("is_locked")
+  lockedUntil         DateTime? @map("locked_until")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lastLogin           DateTime? @map("last_login")
+  passwordChangedAt   DateTime? @map("password_changed_at")
+  twoFactorEnabled    Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret     String?   @map("two_factor_secret")
+  backupCodes         String?   @map("backup_codes")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  activities      UserActivity[]
+  permissions     UserPermission[]
+  sessions        UserSession[]
+  createdOrders   Order[]          @relation("OrderCreatedBy")
+  approvedOrders  Order[]          @relation("OrderApprovedBy")
+  stockMovements  StockMovement[]
+  transactions    Transaction[]
+  createdProducts Product[]        @relation("ProductCreatedBy")
+  updatedProducts Product[]        @relation("ProductUpdatedBy")
+  cashClosings    CashClosing[]
+
+  @@map("users")
+}
+
+model UserActivity {
+  id         String           @id @default(uuid())
+  userId     String           @map("user_id")
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType UserActivityType @map("action_type")
+  ipAddress  String?          @map("ip_address")
+  userAgent  String?          @map("user_agent")
+  details    String?
+  timestamp  DateTime         @default(now())
+
+  @@index([userId])
+  @@index([timestamp])
+  @@map("user_activities")
+}
+
+model UserPermission {
+  id         String @id @default(uuid())
+  userId     String @map("user_id")
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module     String
+  permission String
+
+  @@unique([userId, module, permission])
+  @@map("user_permissions")
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionKey   String   @unique @map("session_key")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  lastActivity DateTime @default(now()) @map("last_activity")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+// ============================================
+// INVENTORY MANAGEMENT
+// ============================================
+
+enum ProductType {
+  SIMPLE
+  VARIABLE
+  COMPOSITE
+  SERVICE
+}
+
+model Supplier {
+  id            String   @id @default(uuid())
+  name          String
+  code          String?
+  contactPerson String?  @map("contact_person")
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  country       String?
+  notes         String?
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  products Product[]
+
+  @@map("suppliers")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  zones  WarehouseZone[]
+  stocks Stock[]
+
+  @@map("warehouses")
+}
+
+model WarehouseZone {
+  id          String    @id @default(uuid())
+  warehouseId String    @map("warehouse_id")
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  name        String
+  code        String
+  description String?
+
+  // Relations
+  locations WarehouseLocation[]
+
+  @@unique([warehouseId, code])
+  @@map("warehouse_zones")
+}
+
+model WarehouseLocation {
+  id       String        @id @default(uuid())
+  zoneId   String        @map("zone_id")
+  zone     WarehouseZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  aisle    String
+  rack     String
+  shelf    String
+  bin      String
+  isActive Boolean       @default(true) @map("is_active")
+
+  @@unique([zoneId, aisle, rack, shelf, bin])
+  @@map("warehouse_locations")
+}
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  parentId    String?    @map("parent_id")
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              String      @id @default(uuid())
+  code            String      @unique
+  name            String
+  description     String?
+  type            ProductType @default(SIMPLE)
+  categoryId      String?     @map("category_id")
+  category        Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId      String?     @map("supplier_id")
+  supplier        Supplier?   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  sku             String?     @unique
+  barcode         String?     @unique
+  image           String?
+  costPrice       Decimal     @default(0) @map("cost_price")
+  sellingPrice    Decimal     @map("selling_price")
+  taxRate         Decimal     @default(0) @map("tax_rate")
+  minStockLevel   Int         @default(0) @map("min_stock_level")
+  maxStockLevel   Int?        @map("max_stock_level")
+  reorderPoint    Int         @default(0) @map("reorder_point")
+  reorderQuantity Int         @default(0) @map("reorder_quantity")
+  isActive        Boolean     @default(true) @map("is_active")
+  trackInventory  Boolean     @default(true) @map("track_inventory")
+  allowBackorder  Boolean     @default(false) @map("allow_backorder")
+  createdById     String      @map("created_by_id")

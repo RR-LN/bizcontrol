@@ -1,0 +1,474 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "sqlite"
+    url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER MANAGEMENT & AUTHENTICATION
+// ============================================
+
+enum UserRole {
+    ADMIN
+    MANAGER
+    OPERATOR
+    VIEWER
+}
+
+enum UserActivityType {
+    LOGIN
+    LOGOUT
+    PASSWORD_CHANGE
+    PROFILE_UPDATE
+    FAILED_LOGIN
+}
+
+model User {
+    id                  String    @id @default(uuid())
+    email               String    @unique
+    password            String
+    firstName           String?   @map("first_name")
+    lastName            String?   @map("last_name")
+    phone               String?
+    role                UserRole  @default(OPERATOR)
+    isActive            Boolean   @default(true) @map("is_active")
+    isLocked            Boolean   @default(false) @map("is_locked")
+    lockedUntil         DateTime? @map("locked_until")
+    failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+    lastLogin           DateTime? @map("last_login")
+    passwordChangedAt   DateTime? @map("password_changed_at")
+    twoFactorEnabled    Boolean   @default(false) @map("two_factor_enabled")
+    twoFactorSecret     String?   @map("two_factor_secret")
+    backupCodes         String?   @map("backup_codes")
+    createdAt           DateTime  @default(now()) @map("created_at")
+    updatedAt           DateTime  @updatedAt @map("updated_at")
+
+    // Relations
+    activities      UserActivity[]
+    permissions     UserPermission[]
+    sessions        UserSession[]
+    createdOrders   Order[]          @relation("OrderCreatedBy")
+    approvedOrders  Order[]          @relation("OrderApprovedBy")
+    stockMovements  StockMovement[]
+    transactions    Transaction[]
+    createdProducts Product[]        @relation("ProductCreatedBy")
+    updatedProducts Product[]        @relation("ProductUpdatedBy")
+    cashClosings    CashClosing[]
+
+    @@map("users")
+}
+
+model UserActivity {
+    id         String           @id @default(uuid())
+    userId     String           @map("user_id")
+    user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+    actionType UserActivityType @map("action_type")
+    ipAddress  String?          @map("ip_address")
+    userAgent  String?          @map("user_agent")
+    details    String?
+    timestamp  DateTime         @default(now())
+
+    @@index([userId])
+    @@index([timestamp])
+    @@map("user_activities")
+}
+
+model UserPermission {
+    id         String @id @default(uuid())
+    userId     String @map("user_id")
+    user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    module     String
+    permission String
+
+    @@unique([userId, module, permission])
+    @@map("user_permissions")
+}
+
+model UserSession {
+    id           String   @id @default(uuid())
+    userId       String   @map("user_id")
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    sessionKey   String   @unique @map("session_key")
+    ipAddress    String?  @map("ip_address")
+    userAgent    String?  @map("user_agent")
+    lastActivity DateTime @default(now()) @map("last_activity")
+    createdAt    DateTime @default(now()) @map("created_at")
+
+    @@index([userId])
+    @@map("user_sessions")
+}
+
+// ============================================
+// INVENTORY MANAGEMENT
+// ============================================
+
+enum ProductType {
+    SIMPLE
+    VARIABLE
+    COMPOSITE
+    SERVICE
+}
+
+model Supplier {
+    id            String   @id @default(uuid())
+    name          String
+    code          String?
+    contactPerson String?  @map("contact_person")
+    email         String?
+    phone         String?
+    address       String?
+    city          String?
+    country       String?
+    notes         String?
+    isActive      Boolean  @default(true) @map("is_active")
+    createdAt     DateTime @default(now()) @map("created_at")
+    updatedAt     DateTime @updatedAt @map("updated_at")
+
+    // Relations
+    products Product[]
+
+    @@map("suppliers")
+}
+
+model Warehouse {
+    id        String   @id @default(uuid())
+    name      String
+    code      String   @unique
+    address   String?
+    phone     String?
+    isActive  Boolean  @default(true) @map("is_active")
+    notes     String?
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    // Relations
+    zones  WarehouseZone[]
+    stocks Stock[]
+
+    @@map("warehouses")
+}
+
+model WarehouseZone {
+    id          String    @id @default(uuid())
+    warehouseId String    @map("warehouse_id")
+    warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+    name        String
+    code        String
+    description String?
+
+    // Relations
+    locations WarehouseLocation[]
+
+    @@unique([warehouseId, code])
+    @@map("warehouse_zones")
+}
+
+model WarehouseLocation {
+    id       String        @id @default(uuid())
+    zoneId   String        @map("zone_id")
+    zone     WarehouseZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+    aisle    String
+    rack     String
+    shelf    String
+    bin      String
+    isActive Boolean       @default(true) @map("is_active")
+
+    @@unique([zoneId, aisle, rack, shelf, bin])
+    @@map("warehouse_locations")
+}
+
+model Category {
+    id          String     @id @default(uuid())
+    name        String     @unique
+    description String?
+    parentId    String?    @map("parent_id")
+    parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+    children    Category[] @relation("CategoryHierarchy")
+    createdAt   DateTime   @default(now()) @map("created_at")
+    updatedAt   DateTime   @updatedAt @map("updated_at")
+
+    // Relations
+    products Product[]
+
+    @@map("categories")
+}
+
+model Product {
+    id              String      @id @default(uuid())
+    code            String      @unique
+    name            String
+    description     String?
+    type            ProductType @default(SIMPLE)
+    categoryId      String?     @map("category_id")
+    category        Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+    supplierId      String?     @map("supplier_id")
+    supplier        Supplier?   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+    sku             String?     @unique
+    barcode         String?     @unique
+    image           String?
+    costPrice       Decimal     @default(0) @map("cost_price")
+    sellingPrice    Decimal     @map("selling_price")
+    taxRate         Decimal     @default(0) @map("tax_rate")
+    minStockLevel   Int         @default(0) @map("min_stock_level")
+    maxStockLevel   Int?        @map("max_stock_level")
+    reorderPoint    Int         @default(0) @map("reorder_point")
+    reorderQuantity Int         @default(0) @map("reorder_quantity")
+    isActive        Boolean     @default(true) @map("is_active")
+    trackInventory  Boolean     @default(true) @map("track_inventory")
+    allowBackorder  Boolean     @default(false) @map("allow_backorder")
+    createdById     String      @map("created_by_id")
+    createdBy       User        @relation("ProductCreatedBy", fields: [createdById], references: [id])
+    updatedById     String?     @map("updated_by_id")
+    updatedBy       User?       @relation("ProductUpdatedBy", fields: [updatedById], references: [id])
+    createdAt       DateTime    @default(now()) @map("created_at")
+    updatedAt       DateTime    @updatedAt @map("updated_at")
+
+    // Relations
+    stocks         Stock[]
+    stockMovements StockMovement[]
+    orderItems     OrderItem[]
+
+    @@index([categoryId])
+    @@index([supplierId])
+    @@map("products")
+}
+
+model Stock {
+    id          String    @id @default(uuid())
+    productId   String    @map("product_id")
+    product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+    warehouseId String    @map("warehouse_id")
+    warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+    quantity    Int       @default(0)
+    reserved    Int       @default(0)
+    updatedAt   DateTime  @updatedAt @map("updated_at")
+
+    @@unique([productId, warehouseId])
+    @@map("stocks")
+}
+
+model StockMovement {
+    id        String   @id @default(uuid())
+    productId String   @map("product_id")
+    product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+    type      String // IN, OUT, ADJUSTMENT, TRANSFER
+    quantity  Int
+    reason    String?
+    reference String?
+    userId    String   @map("user_id")
+    user      User     @relation(fields: [userId], references: [id])
+    createdAt DateTime @default(now()) @map("created_at")
+
+    @@index([productId])
+    @@index([createdAt])
+    @@map("stock_movements")
+}
+
+// ============================================
+// ORDER & SALES MANAGEMENT
+// ============================================
+
+enum OrderStatus {
+    DRAFT
+    PENDING
+    APPROVED
+    PROCESSING
+    SHIPPED
+    DELIVERED
+    CANCELLED
+    RETURNED
+}
+
+enum PaymentStatus {
+    PENDING
+    PARTIAL
+    PAID
+    REFUNDED
+    CANCELLED
+}
+
+model Customer {
+    id        String   @id @default(uuid())
+    name      String
+    email     String?
+    phone     String?
+    address   String?
+    city      String?
+    country   String?
+    taxId     String?  @map("tax_id")
+    notes     String?
+    isActive  Boolean  @default(true) @map("is_active")
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    // Relations
+    orders Order[]
+
+    @@map("customers")
+}
+
+model Order {
+    id              String        @id @default(uuid())
+    orderNumber     String        @unique @map("order_number")
+    customerId      String?       @map("customer_id")
+    customer        Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+    status          OrderStatus   @default(DRAFT)
+    paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
+    subtotal        Decimal       @default(0)
+    discountAmount  Decimal       @default(0) @map("discount_amount")
+    discountPercent Decimal       @default(0) @map("discount_percent")
+    taxAmount       Decimal       @default(0) @map("tax_amount")
+    shippingCost    Decimal       @default(0) @map("shipping_cost")
+    totalAmount     Decimal       @default(0) @map("total_amount")
+    notes           String?
+    createdById     String        @map("created_by_id")
+    createdBy       User          @relation("OrderCreatedBy", fields: [createdById], references: [id])
+    approvedById    String?       @map("approved_by_id")
+    approvedBy      User?         @relation("OrderApprovedBy", fields: [approvedById], references: [id])
+    approvedAt      DateTime?     @map("approved_at")
+    createdAt       DateTime      @default(now()) @map("created_at")
+    updatedAt       DateTime      @updatedAt @map("updated_at")
+
+    // Relations
+    items        OrderItem[]
+    transactions Transaction[]
+
+    @@index([customerId])
+    @@index([status])
+    @@index([createdAt])
+    @@map("orders")
+}
+
+model OrderItem {
+    id              String  @id @default(uuid())
+    orderId         String  @map("order_id")
+    order           Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+    productId       String  @map("product_id")
+    product         Product @relation(fields: [productId], references: [id])
+    quantity        Int     @default(1)
+    unitPrice       Decimal @map("unit_price")
+    unitCost        Decimal @default(0) @map("unit_cost")
+    discountPercent Decimal @default(0) @map("discount_percent")
+    taxPercent      Decimal @default(0) @map("tax_percent")
+    totalPrice      Decimal @map("total_price")
+    notes           String?
+
+    @@index([orderId])
+    @@index([productId])
+    @@map("order_items")
+}
+
+// ============================================
+// TRANSACTIONS & PAYMENTS
+// ============================================
+
+enum PaymentMethod {
+    CASH
+    CREDIT_CARD
+    DEBIT_CARD
+    BANK_TRANSFER
+    DIGITAL_WALLET
+    PIX
+    OTHER
+}
+
+enum TransactionStatus {
+    PENDING
+    COMPLETED
+    FAILED
+    REFUNDED
+    CANCELLED
+}
+
+model Transaction {
+    id            String            @id @default(uuid())
+    orderId       String            @map("order_id")
+    order         Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+    paymentMethod PaymentMethod     @map("payment_method")
+    amount        Decimal
+    status        TransactionStatus @default(PENDING)
+    reference     String?
+    receiptUrl    String?           @map("receipt_url")
+    notes         String?
+    processedById String            @map("processed_by_id")
+    processedBy   User              @relation(fields: [processedById], references: [id])
+    processedAt   DateTime          @default(now()) @map("processed_at")
+    createdAt     DateTime          @default(now()) @map("created_at")
+
+    @@index([orderId])
+    @@index([status])
+    @@index([createdAt])
+    @@map("transactions")
+}
+
+// ============================================
+// SYSTEM SETTINGS
+// ============================================
+
+model Settings {
+    id          String   @id @default(uuid())
+    key         String   @unique
+    value       String
+    description String?
+    updatedAt   DateTime @updatedAt @map("updated_at")
+    createdAt   DateTime @default(now()) @map("created_at")
+
+    @@map("settings")
+}
+
+// ============================================
+// CASH CLOSING (FECHAMENTO DE CAIXA CEGO)
+// ============================================
+
+model CashClosing {
+    id String @id @default(uuid())
+
+    // Quem fechou o caixa
+    userId String @map("user_id")
+    user   User   @relation(fields: [userId], references: [id])
+
+    // Valores contados pelo operador (CEGO - sem ver o sistema)
+    cashCounted  Decimal @map("cash_counted")
+    cardCounted  Decimal @map("card_counted")
+    pixCounted   Decimal @map("pix_counted")
+    totalCounted Decimal @map("total_counted")
+
+    // Valores reais do sistema
+    cashExpected  Decimal @map("cash_expected")
+    cardExpected  Decimal @map("card_expected")
+    pixExpected   Decimal @map("pix_expected")
+    totalExpected Decimal @map("total_expected")
+
+    // Diferenças (positivo = sobra, negativo = falta)
+    cashDifference  Decimal @map("cash_difference")
+    cardDifference  Decimal @map("card_difference")
+    pixDifference   Decimal @map("pix_difference")
+    totalDifference Decimal @map("total_difference")
+
+    // Observações do operador
+    notes String?
+
+    // Status do fechamento
+    status String @default("CLOSED") // CLOSED, REVIEWED, FLAGGED
+
+    // Alerta para admin (diferença > R$ 5,00)
+    hasAlert        Boolean   @default(false) @map("has_alert")
+    alertReviewedBy String?   @map("alert_reviewed_by")
+    alertReviewedAt DateTime? @map("alert_reviewed_at")
+
+    // Período do fechamento
+    closingDate DateTime @default(now()) @map("closing_date")
+    createdAt   DateTime @default(now()) @map("created_at")
+
+    @@index([userId])
+    @@index([closingDate])
+    @@index([hasAlert])
+    @@index([status])
+    @@map("cash_closings")
+}
